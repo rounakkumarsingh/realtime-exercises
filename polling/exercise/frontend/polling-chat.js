@@ -3,7 +3,7 @@ const msgs = document.getElementById("msgs");
 
 // let's store all current messages here
 let allChat = [];
-
+let failedRequests = 0;
 // the interval to poll at in milliseconds
 const INTERVAL = 3000;
 
@@ -44,12 +44,18 @@ async function getNewMsgs() {
     try {
         const res = await fetch("/poll");
         json = await res.json();
+
+        if (res.status >= 400) {
+            throw new Error("request failed", req.status);
+        }
+
+        allChat = json.msgs;
+        render();
+        failedRequests = 0;
     } catch (error) {
         console.error(error);
+        failedRequests++;
     }
-
-    allChat = json.msgs;
-    render();
 }
 
 function render() {
@@ -70,7 +76,7 @@ let timeToMakeNextRequest = 0;
 async function rafTimer(time) {
     if (timeToMakeNextRequest <= time) {
         await getNewMsgs();
-        timeToMakeNextRequest = time + INTERVAL;
+        timeToMakeNextRequest = time + INTERVAL + failedRequests * 5000;
     }
     requestAnimationFrame(rafTimer);
 }
