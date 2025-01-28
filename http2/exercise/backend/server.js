@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import nanobuffer from "nanobuffer";
 import handler from "serve-handler";
 
-const connections = [];
+let connections = [];
 
 const msg = new nanobuffer(50);
 const getMsgs = () => Array.from(msg).reverse();
@@ -34,6 +34,25 @@ const server = http2.createSecureServer({
  * Code goes here
  *
  */
+server.on("stream", (stream, header) => {
+    const method = header[":method"];
+    const path = header[":path"];
+
+    if (method === "GET" && path === "/msgs") {
+        console.log("Connected");
+        stream.respond({
+            ":status": 200,
+            "content-type": "text/plain; charset=utf-8",
+        });
+
+        stream.write(JSON.stringify({ msgs: getMsgs() }));
+        connections.push(stream);
+
+        stream.on("close", () => {
+            connections = connections.filter((s) => s !== stream);
+        });
+    }
+});
 
 server.on("request", async (req, res) => {
     const path = req.headers[":path"];
@@ -51,14 +70,27 @@ server.on("request", async (req, res) => {
         for await (const chunk of req) {
             buffers.push(chunk);
         }
-        const data = Buffer.concat(buffers).toString();
-        JSON.parse(data);
-
+        const json = Buffer.concat(buffers).toString();
+        const data = JSON.parse(json);
         /*
          *
          * some code goes here
          *
          */
+
+        msg.push({
+            user: data.user,
+            text: data.text,
+            time: Date.now(),
+        });
+
+        // all done with the request
+        res.end();
+
+        // notify all connected users
+        for (const stream of connections) {
+            stream.write(JSON.stringify({ msgs: getMsgs() }));
+        }
     }
 });
 
